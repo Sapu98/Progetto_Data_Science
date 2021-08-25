@@ -1,0 +1,336 @@
+---
+title: "Le fiabe sono davvero così positive?"
+author: "Lorenzo Dal Fabbro"
+date: "27/07/2021"
+output: ioslides_presentation
+---
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+#caricamento delle librerie
+library(dplyr)
+library(tidyverse)
+library(tidytext)
+library(stringr)
+library(topicmodels)
+library(scales)
+library(ggmap)
+library(ggrepel)
+library(forcats)
+library(scales)
+library(textdata)
+library(installr)
+library(SnowballC)
+```
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+#upload dei file txt con le fiabe
+
+cindarella <- read.delim2("cindarella.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "Cindarella")
+names(cindarella)[1] <- "Text"
+tidycindarella <- cindarella %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+HanselGretel <- read.delim2("Hansel.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "Hansel & Gretel")
+names(HanselGretel)[1] <- "Text"
+tidyHanselGretel <- HanselGretel %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+TheMusiciansOfBremen <- read.delim2("MusicantiBrema.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "The Musicians Of Bremen")
+colnames(TheMusiciansOfBremen)[1] <- "Text"
+tidyTheMusiciansOfBremen <- TheMusiciansOfBremen %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+rapunzel <- read.delim2("rapunzel.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "Rapunzel")
+colnames(rapunzel)[1] <- "Text"
+tidyrapunzel <- rapunzel %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+redcap <- read.delim2("redcap.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "The little red cap")
+colnames(redcap)[1] <- "Text"
+tidyredcap <- redcap %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+snowwhite <- read.delim2("snowwhite.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "snowwhite")
+colnames(snowwhite)[1] <- "Text"
+tidysnowwhite <- snowwhite %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+#Join delle fiabe in un unico dataset
+tales <- full_join(full_join(full_join(full_join(full_join(tidycindarella, tidyHanselGretel), tidyTheMusiciansOfBremen), tidyrapunzel), tidyredcap), tidysnowwhite)
+```
+
+## Parole più freqenti dei libri
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+book_stemmed <- tales %>%
+  mutate(word = wordStem(word))
+
+book_stemmed %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 28) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +  xlab(NULL) +
+  coord_flip()
+
+#molte delle parole, tra cui snow white red gretel cap etc sono riconoscibili e si può facilmente intuire da quale libro provengono, sicuramente queste parole più frequenti non le re-incontreremo nel tf-idf.
+#tra queste parole sono presenti le parole king (re) e beauty (bellezza), ricondubili facilmente al tema fiabe, era prevedibile.
+#è interessante notare come alcune parole (come hous o dai) siano scritte sbagliate, probabilmente perché all'epoca quella era la forma corretta e hanno avuto una mutazione successiva.
+```
+
+## Le più frequenti cinque parole di ogni sentimento
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+tales %>%
+  count(word) %>%
+  inner_join(get_sentiments("nrc"), by = "word") %>%
+  group_by(sentiment) %>%
+  top_n(5, n) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~ sentiment, scales = "free") +
+  labs(y = "Contribution for each sentiment sentiment", x = NULL)
+
+#già si può notare che le parole positive superano in frequenza più del doppio le parole negative, anche questo fatto è facilmente riconducibile alle fiabe.
+#Le parole più frequenti si dividono tra i sentimenti di anticipazione, gioia e fiducia, tutte e tre emozioni positive, ma le parole negative, seppur di minor frequenza, sembrano di più, soprattutto tra le emozioni di paura e tristezza.
+#è curioso notare come la parola "mother" (mamma) sia presente sia nell'emozione di gioia, fiducia, anticipazione e di positività, sia nell'emozione di tristezza e di negatività, che, in un contesto di fiabe, spesso la figura genitoriale è più una figura di un antagonista, che di amico (ammesso che i protagonisti non siano orfani).
+```
+
+## Andamento dei sentimenti tra le varie storie
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+tales %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(Book, index = linenumber %/% 6, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  ggplot(aes(index, sentiment, fill = Book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~Book, ncol = 2, scales = "free_x")
+
+#Mi aspettavo che i libri fossero estremamente negativi, infatti ho fatto questa ricerca per confermare la mia teoria. Nella maggior parte dei casi, le barre positive si concentrano nella parte finale e in una parte verso il centro della storia.
+#rapunzel è la fiaba con le barre negative più lunghe, più denso di negatività. Non mi aspettavo questo risultato,
+#snowwhite ha la maggior parte delle barre negative, che è un risultato prevedibile, anche se mi aspettavo che Hansel & gretel lo superasse.
+#strano che non ci sia un'happy ending su tutte le storie ed è presente solo nelle storie di rapunzel, hansel & gretel e i musicanti di brema; probabilmente hanno sempre usato parole per lo più neutre e quindi manca la barra.
+```
+
+## Parole positive e negative più significative nelle varie storie
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+
+tales %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  group_by(sentiment) %>%
+  top_n(7) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(y = "Contribution to sentiment", x = NULL) +
+  coord_flip()
+
+#anche in questo caso, si conferma quanto predetto prima, ovvero che le parole positive hanno più occurrenze di quelle negative.
+#di per sè, le parole non suggeriscono la fiaba di provenienza.
+#le parole positive più frequenti rigurdano la bellezza, la ricchezza e la pace, mentre le parole negative più frequenti rigurdano la povertà, la morte, l'oscurità e il veleno.
+```
+
+# Uso delle parole delle varie storie
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+tales2 <- full_join(full_join(full_join(full_join(full_join(cindarella, HanselGretel), TheMusiciansOfBremen), rapunzel), redcap), snowwhite)
+
+book_words <- tales2 %>%
+  unnest_tokens(word, Text) %>%
+  count(Book, word, sort = TRUE) %>%
+  anti_join(stop_words)
+
+total_words <- book_words %>% 
+  group_by(Book) %>% 
+  summarize(total = sum(n))
+
+left_join(book_words, total_words) %>%
+  ggplot(aes(n / total, fill = Book)) +
+  geom_histogram(show.legend = FALSE) +
+  facet_wrap(~Book, ncol = 2, scales = "free_y")
+
+#Si è osservato che solitamente poche parole hanno un'alta frequenza e tante parole hanno una bassa occorrenza.
+```
+
+## Legge di Zipf
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+book_words %>% 
+  group_by(Book) %>% 
+  mutate(rango = row_number(), `frequenza delle parole` = n/rango) %>% 
+  ggplot(aes(rango, `frequenza delle parole`, group = Book, color = Book)) + 
+  geom_line(size = 1.2, alpha = 0.7, show.legend = TRUE) + 
+  scale_x_log10() +
+  scale_y_log10()
+
+#la legge di zipf sostiene che in un testo ci sono poche parole usate tante volte e tante usate poche. Questi testi confermano la teoria
+```
+
+## Calcolo del tf-idf
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+#
+book_words %>%
+  bind_tf_idf(word, Book, n) %>%
+  arrange(desc(tf_idf)) %>%
+  group_by(Book) %>% 
+  top_n(7, tf_idf) %>% 
+  ungroup %>%
+  mutate(word = reorder(word, tf_idf)) %>%
+  ggplot(aes(word, tf_idf, fill = Book)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~Book, ncol = 4, scales = "free") +
+  coord_flip()
+
+#si può notare che le prime parole più frequenti che caratterizzano i libri sono proprio i nomi dei personaggi e gli oggetti e altre personaggi caratteristici delle fiabe, come la scarpetta, la cenere o la moglie in cenerentola; i bambini o la strega di Hansel & Gretel; l'incantesimo, la torre e i capelli di raperonzolo, i nani, la regina o la bara in biancaneve; la nonnina, il lupo e il cappuccetto rosso di cappuccetto rosso o il re e le bestie dei musicanti di brema.
+```
+
+## Quanto sono simili le fiabe tra loro?
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+#
+#creazione di sei argomenti con LDA
+book_lda <- tales %>%
+  count(Book, word, sort = TRUE) %>%
+  cast_dtm(Book, word, n) %>% 
+  LDA(k = 3, control = list(seed = 1000))
+
+#Assegnazione degli argomenti a tutte le storie e selezione del solo argomento predominante
+tidy(book_lda, matrix = "gamma") %>%
+  group_by(document) %>%
+  top_n(1, gamma) %>%
+  ungroup() %>%
+  arrange(topic) %>%
+  ggplot(aes(x="", y=gamma, fill=document)) +
+  geom_bar(width = 1, stat = "identity", show.legend = TRUE) +
+  facet_wrap(~topic, ncol = 2)
+
+#essendo questa una tecnica di unsupervised learning, non c'è una definita classificazione per la suddivisione in argomenti delle fiabe, potrebbero essere molteplici, anche perché non è una formula matematica.
+#proviamo a interpretare la classificazione data dal nostro modello: hansel & gretel e il cappuccetto rosso sono state unite insieme nello stesso argomento. Effettivamente entrambe le storie sono accumunate dalla paura e dalla sottrazione dei proprio cari per i protagonisti.
+#cenerentola è stato unito nello stesso argomento dei musicanti di brema ed entrambe le storie parlano della tristezza dei protagonisti, tutti maltratti dal propria matrigna per cenerentola e dai propri padroni per gli animali e tutti sono in cerca della felicità.
+#nel terzo argomento sono stati uniti raperonzolo e biancaneve, dove entrambe le protagoniste sono isolate dalla propria famiglia e attendono l'aiuto di qualcuno..
+```
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+#upload dei file txt con le fiabe
+
+cindarella2 <- read.delim2("cindarella2.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "Cindarella2")
+names(cindarella2)[1] <- "Text"
+tidycindarella2 <- cindarella2 %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+HanselGretel2 <- read.delim2("Hansel2.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "Hansel & Gretel2")
+names(HanselGretel2)[1] <- "Text"
+tidyHanselGretel2 <- HanselGretel2 %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+TheMusiciansOfBremen2 <- read.delim2("MusicantiBrema2.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "The Musicians Of Bremen2")
+colnames(TheMusiciansOfBremen2)[1] <- "Text"
+tidyTheMusiciansOfBremen2 <- TheMusiciansOfBremen2 %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+rapunzel2 <- read.delim2("rapunzel2.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "Rapunzel2")
+colnames(rapunzel2)[1] <- "Text"
+tidyrapunzel2 <- rapunzel2 %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+redcap2 <- read.delim2("redcap2.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "The little red cap2")
+colnames(redcap2)[1] <- "Text"
+tidyredcap2 <- redcap2 %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+snowwhite2 <- read.delim2("snowwhite2.txt",header = FALSE, stringsAsFactors = FALSE) %>%
+  mutate(Book = "snowwhite2")
+colnames(snowwhite2)[1] <- "Text"
+tidysnowwhite2 <- snowwhite2 %>%
+  mutate(linenumber = row_number())  %>%
+  unnest_tokens(word, Text) %>%
+  anti_join(stop_words, by = "word")
+
+#Join delle fiabe in un unico dataset
+tales3 <- full_join(full_join(full_join(full_join(full_join(tidycindarella2, tidyHanselGretel2), tidyTheMusiciansOfBremen2), tidyrapunzel2), tidyredcap2), tidysnowwhite2)
+
+tales4 <- full_join(tales, tales3)
+
+```
+
+## La versione delle fiabe distribuite ai bambini sono più positive delle originali?
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+tales4 %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(Book, index = linenumber %/% 15, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  ggplot(aes(index, sentiment, fill = Book)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~Book, ncol = 4, scales = "free_x")
+
+#questo risultato conferma la mia teoria che le versione delle fiabe distribuite ai bambini sono tipicamente più positive di quelle originali dei fratelli grimm, soprattutto per le storie di cenerentola, ma mi aspettavo ci fosse maggior differenza.
+```
+
+
+## Quanto sono simili le due versione delle storie tra di loro?
+
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+#
+#creazione di sei argomenti con LDA
+book_lda <- tales4 %>%
+  count(Book, word, sort = TRUE) %>%
+  cast_dtm(Book, word, n) %>% 
+  LDA(k = 6, control = list(seed = 1000))
+
+#Assegnazione degli argomenti a tutte le storie e selezione del solo argomento predominante
+tidy(book_lda, matrix = "gamma") %>%
+  group_by(document) %>%
+  top_n(1, gamma) %>%
+  ungroup() %>%
+  arrange(topic) %>%
+  ggplot(aes(x="", y=gamma, fill=document)) +
+  geom_bar(width = 1, stat = "identity", show.legend = TRUE) +
+  facet_wrap(~topic, ncol = 2)
+
+#il mio intento era quello di verificare se le due versioni delle stesse storie venissero riunite nello stesso argomento. Questo succede per cenerentola, hansel e gretel, biancaneve e il cappuccetto rosso, mentre i musicanti di brema e raperonzolo vengono divisi, il primo unito con biancaneve (cone nella precedente unione) e il secondo con il cappuccetto rosso, probabilmente perché entrambe le storie parlano di animali come protagonisti principali.
+```
